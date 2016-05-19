@@ -14,18 +14,29 @@ class ImPro:
     # - - - - - - - - - - - - - - - - 
     # - - - - - -  INIT - - - - - - -
     # - - - - - - - - - - - - - - - -
-    def __init__(self, height, width):
-        self.camera =  picamera.PiCamera()
+    def __init__(self, cam, height, width, cropAroundOffset=False, proccessingHeight=0, proccessingWidth=0):
+        self.camera = cam
         self.stream =  picamera.array.PiYUVArray(self.camera)
         
+        # When this boolean is True, The Frame taken will be cropped down to a 96x96 image for proccessing
+        # the center of the cropped down image will be the expected position of the object
+        self.cropAroundOffset = cropAroundOffset
+
         self.height = height
         self.width = width
-        
+
+        if self.cropAroundOffset == False:
+            self.proccessingHeight = self.height
+            self.proccessingWidth = self.width
+        else:
+            self.proccessingHeight = proccessingHeight
+            self.proccessingWidth = proccessingWidth
+
         self.camera.resolution = (self.height, self.width)
 
         self.pixelObjList = []
         self.objIDCntr = 0
-        self.pixelObjList.append(PixelObj.PixelObj(self.getNextObjId(), self.height))
+        self.pixelObjList.append(PixelObj.PixelObj(self.getNextObjId(), self.proccessingHeight))
     
     # - - - - - - - - - - - - - - - - 
     # - - - GET NEXT OBJ ID - - - - -
@@ -37,15 +48,16 @@ class ImPro:
     # - - - - - - - - - - - - - - - - 
     # - - - - CAPTURE FRAME - - - - -
     # - - - - - - - - - - - - - - - -
-    def captureFrame(self):    
+    def captureFrame(self, offset = None, folderName = 0):    
+        self.folderName = folderName
         self.stream =  picamera.array.PiYUVArray(self.camera)
         self.camera.capture(self.stream, 'yuv')
         self.camera._set_led(True)
 
         self.pixelObjList = []
         self.objIDCntr = 0
-        self.pixelObjList.append(PixelObj.PixelObj(self.getNextObjId(), self.height))
-
+        self.pixelObjList.append(PixelObj.PixelObj(self.getNextObjId(), self.proccessingHeight))
+        
         rows = []
         for _ in range(self.height):
             rows.append(range(self.width))
@@ -53,6 +65,16 @@ class ImPro:
             for i, i_ in enumerate(range(self.height - 1, -1, -1)): #flip vertically
                 rows[j][i] = self.stream.array[j_][i_][0]
         
+        # We need to crop the image to a 96 x 96 image if the cropAroundOffset value it True
+        if self.cropAroundOffset and offset is not None:
+            croppedRows = []
+            for _ in range(self.proccessingHeight):
+                croppedRows.append(range(self.proccessingWidth))  
+            for j in range(self.proccessingHeight):
+                for i in range(self.proccessingWidth):
+                    croppedRows[j][i] = rows[j + offset.y][i + offset.x]
+            rows = croppedRows 
+
         self.savePNG('raw.png', rows)
         self.processFrame_5(self.processFrame_4(self.processFrame_3(self.processFrame_1(rows), self.processFrame_2(rows))))
     
@@ -62,11 +84,11 @@ class ImPro:
     def processFrame_1(self, rawrows):
         '''get horizontal edges'''
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
-                if i + 1 <= self.width - 1:
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
+                if i + 1 <= self.proccessingWidth - 1:
                     rows[j][i] = self.getDif(rawrows[j][i], rawrows[j][i+1])
                 else:
                     rows[j][i] = self.getDif(rawrows[j][i], rawrows[j][i-1])
@@ -79,11 +101,11 @@ class ImPro:
     def processFrame_2(self, rawrows):
         '''get vertical edges'''
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
-                if j + 1 <= self.width - 1:
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
+                if j + 1 <= self.proccessingWidth - 1:
                     rows[j][i] = self.getDif(rawrows[j][i], rawrows[j+1][i])
                 else:
                     rows[j][i] = self.getDif(rawrows[j][i], rawrows[j-1][i])
@@ -96,10 +118,10 @@ class ImPro:
     def processFrame_3(self, hrows, vrows):
         '''fuse the horizontal edge-image with the vertical edge-image'''
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
                 rows[j][i] = self.getFusion(hrows[j][i], vrows[j][i])
         self.savePNG('processed_3.png', rows)
         return rows
@@ -112,10 +134,10 @@ class ImPro:
         threshhold = 20
         
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
                 if edgeRows[j][i] >= threshhold:
                     rows[j][i] = 255
                 else:
@@ -129,12 +151,12 @@ class ImPro:
     def processFrame_4_5(self, bwRows):
         '''make all the white pixel spread out 1 more pixel! '''
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
                 if bwRows[j][i] == 255:
-                    tmpList = self.getNeighbours((i, j), self.height, self.width)
+                    tmpList = self.getNeighbours((i, j), self.proccessingHeight, self.proccessingWidth)
                     for ent in tmpList:
                         tmpX, tmpY = ent
                         rows[tmpY][tmpX] = 255
@@ -149,11 +171,11 @@ class ImPro:
     # - - - - - - - - - - - - - - - -
     def processFrame_5(self, bwRows):
         '''make PixelObjects by looking which pixels are direct 8-neighbours of each other'''
-        for j in range(self.height):
-            for i in range(self.width):
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
                 if bwRows[j][i] == 255: #if the pixel is white
                     tmpList = []
-                    for ent in self.getNeighbours((i, j), self.height, self.width):
+                    for ent in self.getNeighbours((i, j), self.proccessingHeight, self.proccessingWidth):
                         tmp_x, tmp_y = ent
                         if bwRows[tmp_y][tmp_x] == 255: #if the pixel is white
                             tmpList.append(ent)
@@ -163,15 +185,15 @@ class ImPro:
                         if obj.checkXYset(tmpList) is True: #make a new PixelObj whenever a Pixel isn't connected to an object
                             flag = True
                     if flag is False:
-                        self.pixelObjList.append(PixelObj.PixelObj(self.getNextObjId(), self.height))
+                        self.pixelObjList.append(PixelObj.PixelObj(self.getNextObjId(), self.proccessingHeight))
                         for obj in self.pixelObjList:
                             obj.checkXYset(tmpList) 
         for obj in self.pixelObjList:
             rows = []
-            for _ in range(self.height):
-                rows.append(range(self.width))  
-            for j in range(self.height):
-                for i in range(self.width):
+            for _ in range(self.proccessingHeight):
+                rows.append(range(self.proccessingWidth))  
+            for j in range(self.proccessingHeight):
+                for i in range(self.proccessingWidth):
                     if (i, j) in obj.XYset:
                         rows[j][i] = 255
                     else:
@@ -204,10 +226,10 @@ class ImPro:
             obj.computeMeanCoord()
             #print obj.XYset
             rows = []
-            for _ in range(self.height):
-                rows.append(range(self.width))  
-            for j in range(self.height):
-                for i in range(self.width):
+            for _ in range(self.proccessingHeight):
+                rows.append(range(self.proccessingWidth))  
+            for j in range(self.proccessingHeight):
+                for i in range(self.proccessingWidth):
                     if (i, j) in obj.XYset:
                         rows[j][i] = 255
                     else:
@@ -221,7 +243,6 @@ class ImPro:
     # - - - - - - - - - - - - - - - -
     def processPixelObj_2(self):
         '''make a new png with 1 pixel per object at their respective center'''
-        #IS BEEING SKIPPED!
         tmpPosList = []
 
         for obj in self.pixelObjList:
@@ -229,10 +250,10 @@ class ImPro:
                 tmpPosList.append(ent)
             
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
                 if (i, j) in tmpPosList:
                     rows[j][i] = 255
                 else:
@@ -248,14 +269,15 @@ class ImPro:
         tmpPosList = []
 
         for obj in self.pixelObjList:
-            print "X: ", obj.coord_x, " Y: ", obj.coord_y
-            tmpPosList.append((obj.coord_x, obj.coord_real_y))
+            if obj.numberOfPixels > 50:
+                print "X: ", obj.coord_x, " Y: ", obj.coord_y
+                tmpPosList.append((obj.coord_x, obj.coord_real_y))
             
         rows = []
-        for _ in range(self.height):
-            rows.append(range(self.width))  
-        for j in range(self.height):
-            for i in range(self.width):
+        for _ in range(self.proccessingHeight):
+            rows.append(range(self.proccessingWidth))  
+        for j in range(self.proccessingHeight):
+            for i in range(self.proccessingWidth):
                 if (i, j) in tmpPosList:
                     rows[j][i] = 255
                 else:
@@ -281,8 +303,9 @@ class ImPro:
     # - - - - - SAVE PNG  - - - - - -
     # - - - - - - - - - - - - - - - -
     def savePNG(self, filename, rws):
-        f = open(string.join(['img/', filename]), 'wb')
-        w = png.Writer(self.height, self.width, greyscale=True)
+        print 'saving the PNG'
+        f = open(string.join(['img/', str(self.folderName), filename]), 'wb')
+        w = png.Writer(self.proccessingHeight, self.proccessingWidth, greyscale=True)
         w.write(f, rws) 
         f.close()
 
