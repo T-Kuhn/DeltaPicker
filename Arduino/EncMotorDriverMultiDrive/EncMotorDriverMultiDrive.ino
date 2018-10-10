@@ -11,9 +11,9 @@ EncMotControl emc1(22, 24, 6, 36, 4.72, true);
 EncMotControl emc2(26, 28, 7, 38, 4.75, false);
 EncMotControl emc3(30, 32, 8, 40, 4.75, false);
 
-Encoder Encoder1(23, 25, 35, 37);
-Encoder Encoder2(27, 29, 39, 41);
-Encoder Encoder3(31, 33, 43, 45);
+Encoder Encoder1(23, 25);
+Encoder Encoder2(27, 29);
+Encoder Encoder3(31, 33);
 
 int initFlag = false;
 int initCounter = 0;

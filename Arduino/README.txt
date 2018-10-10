@@ -1,0 +1,1 @@
+Copy all the llibraries in the libraries folder to myDocuments/Arduino/libraries.
